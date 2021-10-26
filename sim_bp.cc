@@ -23,8 +23,6 @@ struct branch {
 };
 
 unsigned long int get_index(unsigned long int hex, int m){
-    //unsigned long int x = (hex << 2);
-    //return x & 127;
    return (hex >> 2) & ((1 << m+1) -1);
    // return (((1 << stop) - 1) & (hex >> (stop - 1)));
 }
@@ -33,14 +31,6 @@ unsigned long int get_index(unsigned long int hex, int m){
     //get low 6 (for this time) bits used for branch prediction
     //for now, we will just ignore the collissions
 
-int demo(unsigned long int hex){
-
-    unsigned long int idx = get_index(hex, 6);
-    printf("%lx \n", hex);           // Print and test if file is read correctly
-    printf("First 6 bits of this number: %lx", idx );
-    printf("Index after dividing by 100: %lx", idx % 100);
-    return 0;
-}
 
 int main (int argc, char* argv[])
 {
@@ -104,11 +94,6 @@ int main (int argc, char* argv[])
         exit(EXIT_FAILURE);
     }
 
-    //Initialize data structure
-    branch predtab[64];
-    for (int i=0; i < 64; i ++){
-        predtab[i].counter = 2;
-    }
     
     // Open trace_file in read mode
     FP = fopen(trace_file, "r");
@@ -126,6 +111,13 @@ int main (int argc, char* argv[])
     char str[2];
     int idx, pred;
     char prediction;
+
+    //Initialize data structure
+    branch predtab[64];
+    for (int i=0; i < 64; i ++){
+        predtab[i].counter = 2;
+    }
+
     while(fscanf(FP, "%lx %s", &addr, str) != EOF)
     {
         
@@ -167,9 +159,6 @@ int main (int argc, char* argv[])
         } else {
             miss++;
         }
-        /*************************************
-            Add branch predictor code here
-        **************************************/
     }
 
 printf("number of predictions: %d\n", count);
@@ -177,6 +166,7 @@ printf("number of mispredictions: %d\n", miss);
 printf("misprediction rate:      %f\n", (100.00 * miss/count));
 
     // printing the content
+
     for (int i=0; i < 64; i++){
         printf("%d %d\n", i, predtab[i].counter);
     }
