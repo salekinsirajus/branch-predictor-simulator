@@ -22,14 +22,65 @@ struct branch {
     int counter;
 };
 
-unsigned long int get_index(unsigned long int hex, int m){
-   return (hex >> 2) & ((1 << m+1) -1);
-   // return (((1 << stop) - 1) & (hex >> (stop - 1)));
+unsigned long int left_x_bits(unsigned long int number, int x){
+    return number & (((1<<x)-1) << x);
+
 }
 
-    // Initializes a data structure that holds the predictions for each table
-    //get low 6 (for this time) bits used for branch prediction
-    //for now, we will just ignore the collissions
+
+unsigned long int get_gshare_idx_2(unsigned long int shift_register, unsigned long int pc, int m, int n){
+
+    unsigned long int m_bits_of_pc = get_index(pc, m); 
+    //n bits of shift register (from msb) (from left)
+    unsigned long int shift_register_valid_bits = (left_x_bits(shift_register, n)) << (m-n); 
+
+    return m_bits_of_pc ^ (shift_register << (m-n));  
+    //return m_bits_of_pc ^ shift_register_valid_bits;  
+
+}
+
+unsigned long int get_gshare_idx(unsigned long int shift_register, unsigned long int pc, int m, int n){
+
+    unsigned long int m_bits_of_pc = get_index(pc, m); 
+    unsigned long int n_of_m_bits_of_pc = left_x_bits(m_bits_of_pc, n);
+    //n bits of shift register (from msb) (from left)
+    unsigned long int shift_register_valid_bits = left_x_bits(shift_register, n); 
+    //return shift_register & (((1<<5)-1) << 5);
+    return n_of_m_bits_of_pc ^ shift_register_valid_bits;  
+
+}
+
+unsigned long int get_index(unsigned long int hex, int m){
+   //The following version was working for Bimodal
+   //return (hex >> 2) & ((1 << m+1) -1);
+   return (hex >> 2) & ((1 << (m+1)) -1);
+   // return (((1 << stop) - 1) & (hex >> (stop - 1)));
+}
+// Initializes a data structure that holds the predictions for each table
+//get low 6 (for this time) bits used for branch prediction
+//for now, we will just ignore the collissions
+
+unsigned long int update_bhr(unsigned long int bhr, char outcome, int n){
+    //Update shift register after updating the counter. (We also probably need a
+    //2-D array of counters for each branch
+    //
+    //Right shift
+    //Deposit in the most significant bit
+    bhr =  bhr >> 1;
+    //n=32;
+
+    if (outcome == 't'){
+        bhr |= (1 << (n - 1));
+        bhr &= ((1 << n) - 1);
+        //
+        //setting the MSB(to 1).
+        // #FIXME: is this gonna work on all the machines?
+        // #FIXME: what's the max value of M gonna be?
+        //bhr |= (1 << 32); 
+        //bhr |= (1UL << 32);
+    } 
+    return bhr;
+}
 
 
 int main (int argc, char* argv[])
@@ -111,10 +162,17 @@ int main (int argc, char* argv[])
     char str[2];
     int idx, pred;
     char prediction;
+    int m = params.M1;
+    int n = params.N; 
+
+    unsigned long int bhr = 0; // shift register
+
 
     //Initialize data structure
-    branch predtab[64];
-    for (int i=0; i < 64; i ++){
+    //Make the data structure dynamice
+    int SIZE = 512;
+    branch predtab[SIZE];
+    for (int i=0; i <SIZE ; i ++){
         predtab[i].counter = 2;
     }
 
@@ -124,9 +182,11 @@ int main (int argc, char* argv[])
         outcome = str[0];
         printf("=%d %lx  %c\n", count, addr, outcome);
         count++;
-        idx = get_index(addr, 6) % 64;
+        // The following is for bimodal
+        //idx = get_index(addr, m) % SIZE;
+        idx = get_gshare_idx_2(bhr,addr,m,n) % SIZE;
         pred = predtab[idx].counter;
-        printf("BP:  %d  %d\n", idx, pred);
+        printf("GP:  %d  %d\n", idx, pred);
 
         if (pred >= 2) {
             prediction = 't';
@@ -152,7 +212,10 @@ int main (int argc, char* argv[])
 
 
         pred = predtab[idx].counter;
-        printf("BU:  %d  %d\n", idx, pred);
+        printf("GU:  %d  %d\n", idx, pred);
+        
+        //update bhr
+        bhr = update_bhr(bhr, outcome, n);
 
         if (outcome == prediction){
             hit++;
@@ -161,13 +224,13 @@ int main (int argc, char* argv[])
         }
     }
 
-printf("number of predictions: %d\n", count);
-printf("number of mispredictions: %d\n", miss);
-printf("misprediction rate:      %f\n", (100.00 * miss/count));
+    printf("number of predictions: %d\n", count);
+    printf("number of mispredictions: %d\n", miss);
+    printf("misprediction rate:      %f\n", (100.00 * miss/count));
 
     // printing the content
 
-    for (int i=0; i < 64; i++){
+    for (int i=0; i < SIZE; i++){
         printf("%d %d\n", i, predtab[i].counter);
     }
 
