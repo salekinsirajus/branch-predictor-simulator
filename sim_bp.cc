@@ -129,6 +129,79 @@ unsigned long int update_bhr(unsigned long int bhr, char outcome, int n){
     return bhr;
 }
 
+void run_bimodal_predictor_simulation(bp_params params, char *trace_file_name){
+    char outcome;           // Variable holds branch outcome
+    unsigned long int addr; // Variable holds the address read from input file
+    // Open trace_file in read mode
+    FILE *FILE_POINTER = fopen(trace_file_name, "r");
+    if(FILE_POINTER == NULL)
+    {
+        // Throw error and exit if fopen() failed
+        printf("Error: Unable to open file %s\n", trace_file_name);
+        exit(EXIT_FAILURE);
+    }
+    
+    int hit=0;
+    int miss=0;
+    int count=0;;
+
+    char str[2];
+    int b_pred, b_idx;
+    char prediction;
+    int m2 = params.M2;
+
+    int BIMODALTABSIZE = pow(2, m2);
+    branch bimodaltab[BIMODALTABSIZE];
+    for (int i=0; i <BIMODALTABSIZE ; i++){bimodaltab[i].counter = 2;}
+
+    while(fscanf(FILE_POINTER, "%lx %s", &addr, str) != EOF) {
+        outcome = str[0];
+
+        /*
+        printf("=%d %lx  %c\n", count, addr, outcome);
+        */
+        count++;
+
+        /*=============== Determine Index ============= */
+        b_idx = get_index(addr, m2) % BIMODALTABSIZE;
+
+        /*=============== Make Prediction ============= */
+        b_pred = bimodaltab[b_idx].counter; 
+
+        /*============== Update Table ================= */
+        bimodaltab[b_idx].counter = get_new_prediction_from_outcome(bimodaltab[b_idx].counter, outcome);
+        /* Use this as the final prediction */
+        prediction = itoc_pred(b_pred);
+
+        /*
+        printf("GP:  %d  %d\n", idx, pred);
+        */
+
+        /*
+        pred = predtab[idx].counter;
+        printf("GU:  %d  %d\n", idx, pred);
+        */
+
+        /*============== Update Stats ================= */
+        if (outcome == prediction){
+            hit++;
+        } else {
+            miss++;
+        }
+    }
+
+    // print overall stats
+    printf("OUTPUT\n");
+    printf("number of predictions: %d\n", count);
+    printf("number of mispredictions: %d\n", miss);
+    printf("misprediction rate:      %.2f\%\n", (100.00 * miss/count));
+
+
+    // printing the content
+    print_contents(bimodaltab, BIMODALTABSIZE, "BIMODAL");
+
+    //end
+}
 
 int main (int argc, char* argv[])
 {
@@ -157,6 +230,9 @@ int main (int argc, char* argv[])
         params.M2       = strtoul(argv[2], NULL, 10);
         trace_file      = argv[3];
         printf("COMMAND\n%s %s %lu %s\n", argv[0], params.bp_name, params.M2, trace_file);
+
+        run_bimodal_predictor_simulation(params, trace_file);
+        return 0;
     }
     else if(strcmp(params.bp_name, "gshare") == 0)          // Gshare
     {
