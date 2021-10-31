@@ -212,21 +212,23 @@ int main (int argc, char* argv[])
     int m = params.M1;
     int n = params.N; 
     int k = params.K;
+    int m2 = params.M2;
 
     unsigned long int bhr = 0; // shift register
 
     //TODO: dynamically allocate these arrays
     int CTABSIZE = pow(2, k);
     branch choosertab[CTABSIZE];
-    for (int i=0; i <CTABSIZE; i++){choosertab[i].counter=1;}
+    for (int i=0; i <CTABSIZE; i++){choosertab[i].counter = 1;}
 
-    int BIMODALTABSIZE = 32;
+    int BIMODALTABSIZE = pow(2, m2);
     branch bimodaltab[BIMODALTABSIZE];
-    for (int i=0; i <BIMODALTABSIZE ; i ++){bimodaltab[i].counter = 2;}
+    for (int i=0; i <BIMODALTABSIZE ; i++){bimodaltab[i].counter = 2;}
 
-    int GSHARETABSIZE = 1024;
+    //int GSHARETABSIZE = 1024;
+    int GSHARETABSIZE = pow(2, m);
     branch gsharetab[GSHARETABSIZE];
-    for (int i=0; i <GSHARETABSIZE; i ++){gsharetab[i].counter = 2;}
+    for (int i=0; i <GSHARETABSIZE; i++){gsharetab[i].counter = 2;}
 
 
     while(fscanf(FP, "%lx %s", &addr, str) != EOF) {
@@ -239,8 +241,8 @@ int main (int argc, char* argv[])
         count++;
 
         /*=============== Determine Index ============= */
-        b_idx = get_index(addr, m) % BIMODALTABSIZE;
-        g_idx = get_gshare_idx(bhr,addr,m,n) % GSHARETABSIZE;
+        b_idx = get_index(addr, m2) % BIMODALTABSIZE;
+        g_idx = get_gshare_idx(bhr, addr, m, n) % GSHARETABSIZE;
         //TODO: reexamine this
         h_idx = get_index(addr, k) % CTABSIZE; 
 
@@ -287,9 +289,11 @@ int main (int argc, char* argv[])
     }
 
     // print overall stats
+    printf("OUTPUT\n");
     printf("number of predictions: %d\n", count);
     printf("number of mispredictions: %d\n", miss);
-    printf("misprediction rate:      %f\n", (100.00 * miss/count));
+    printf("misprediction rate:      %.2f\%\n", (100.00 * miss/count));
+
 
     // printing the content
     print_contents(choosertab, CTABSIZE, "CHOOSER");
