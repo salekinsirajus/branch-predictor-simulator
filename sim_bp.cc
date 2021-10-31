@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "sim_bp.h"
 
 /*  argc holds the number of command line arguments
@@ -22,16 +23,25 @@ struct branch {
     int counter;
 };
 
+
+void print_contents(branch table[], int SIZE, char* name){
+    printf("FINAL %s CONTENTS\n", name);
+    for (int i=0; i < SIZE; i++){
+        printf("%d %d\n", i, table[i].counter);
+    }
+}
+
 unsigned long int left_x_bits(unsigned long int number, int x){
     return number & (((1<<x)-1) << x);
 
 }
 
-unsigned long int get_gshare_idx_2(unsigned long int shift_register, unsigned long int pc, int m, int n){
+unsigned long int get_gshare_idx(unsigned long int shift_register, unsigned long int pc, int m, int n){
 
     unsigned long int m_bits_of_pc = get_index(pc, m); 
     //n bits of shift register (from msb) (from left)
-    unsigned long int shift_register_valid_bits = (left_x_bits(shift_register, n)) << (m-n); 
+    //the following is unused as it seems
+    //unsigned long int shift_register_valid_bits = (left_x_bits(shift_register, n)) << (m-n); 
 
     return m_bits_of_pc ^ (shift_register << (m-n));  
 }
@@ -40,7 +50,6 @@ unsigned long int get_index(unsigned long int hex, int m){
    //The following version was working for Bimodal
    //return (hex >> 2) & ((1 << m+1) -1);
    return (hex >> 2) & ((1 << (m+1)) -1);
-   // return (((1 << stop) - 1) & (hex >> (stop - 1)));
 }
 
 int get_new_prediction_from_outcome(int old_pred, char actual){
@@ -64,6 +73,39 @@ int get_new_prediction_from_outcome(int old_pred, char actual){
     }
 
 }
+
+int get_new_pred_chooser(int old_pred, int gshare_pred, int bimodal_pred, int actual){
+    if ((gshare_pred == actual) && (bimodal_pred != actual)){
+        if (old_pred < 3) {
+            return old_pred + 1;
+        } 
+        else {
+            return 3;
+        }
+    } 
+    else if ((gshare_pred != actual) && (bimodal_pred == actual)){
+        if (old_pred > 0) {
+            return old_pred - 1;
+        } 
+        else {
+            return 0 ;
+        }
+    }
+
+    else {
+        return old_pred;
+    }
+}
+
+char itoc_pred(int pred_int){
+    /* Turns the prediction from int to a char. Example: '0'->'n', or '2'->'t' */
+    if (pred_int >= 2) {
+        return 't';
+    }
+
+    return 'n';
+}
+
 
 unsigned long int update_bhr(unsigned long int bhr, char outcome, int n){
     //Update shift register after updating the counter. (We also probably need a
@@ -165,24 +207,27 @@ int main (int argc, char* argv[])
     int count=0;;
 
     char str[2];
-    int idx, pred;
+    int g_pred, h_pred, b_pred, g_idx, h_idx, b_idx;
     char prediction;
     int m = params.M1;
     int n = params.N; 
+    int k = params.K;
 
     unsigned long int bhr = 0; // shift register
 
-    //Initialize data structure
-    //Make the data structure dynamice
-    int SIZE = 512;
-    branch predtab[SIZE];
-    // if it's hybrid
-    branch choosertab[SIZE];
-    branch gsharetab[SIZE];
+    //TODO: dynamically allocate these arrays
+    int CTABSIZE = pow(2, k);
+    branch choosertab[CTABSIZE];
+    for (int i=0; i <CTABSIZE; i++){choosertab[i].counter=1;}
 
-    for (int i=0; i <SIZE ; i ++){
-        predtab[i].counter = 2;
-    }
+    int BIMODALTABSIZE = 32;
+    branch bimodaltab[BIMODALTABSIZE];
+    for (int i=0; i <BIMODALTABSIZE ; i ++){bimodaltab[i].counter = 2;}
+
+    int GSHARETABSIZE = 1024;
+    branch gsharetab[GSHARETABSIZE];
+    for (int i=0; i <GSHARETABSIZE; i ++){gsharetab[i].counter = 2;}
+
 
     while(fscanf(FP, "%lx %s", &addr, str) != EOF) {
         
@@ -192,28 +237,48 @@ int main (int argc, char* argv[])
         printf("=%d %lx  %c\n", count, addr, outcome);
         */
         count++;
-        // The following is for bimodal
-        //idx = get_index(addr, m) % SIZE;
-        idx = get_gshare_idx_2(bhr,addr,m,n) % SIZE;
-        pred = predtab[idx].counter;
+
+        /*=============== Determine Index ============= */
+        b_idx = get_index(addr, m) % BIMODALTABSIZE;
+        g_idx = get_gshare_idx(bhr,addr,m,n) % GSHARETABSIZE;
+        //TODO: reexamine this
+        h_idx = get_index(addr, k) % CTABSIZE; 
+
+        /*=============== Make Prediction ============= */
+        b_pred = bimodaltab[b_idx].counter; 
+        g_pred = gsharetab[g_idx].counter;
+        h_pred = choosertab[h_idx].counter;
+
+        if (h_pred >= 2){
+            /*============== Update Table ================= */
+            gsharetab[g_idx].counter = get_new_prediction_from_outcome(gsharetab[g_idx].counter, outcome);
+            /* Use this as the final prediction */
+            prediction = itoc_pred(g_pred);
+
+        } else {
+            /*============== Update Table ================= */
+            bimodaltab[b_idx].counter = get_new_prediction_from_outcome(bimodaltab[b_idx].counter, outcome);
+            /* Use this as the final prediction */
+            prediction = itoc_pred(b_pred);
+
+        } 
+        /*Update chooser table */
+        //and 'n'
+        choosertab[h_idx].counter = get_new_pred_chooser(choosertab[h_idx].counter, itoc_pred(g_pred), itoc_pred(b_pred), outcome);
+
         /*
         printf("GP:  %d  %d\n", idx, pred);
         */
 
-        predtab[idx].counter = get_new_prediction_from_outcome(predtab[idx].counter, outcome);
-        pred = predtab[idx].counter;
         /*
+        pred = predtab[idx].counter;
         printf("GU:  %d  %d\n", idx, pred);
         */
         
-        //update bhr
+        /*========== Update Global History ============ */
         bhr = update_bhr(bhr, outcome, n);
 
-        if (pred >= 2) {
-            prediction = 't';
-        }
-        else {prediction = 'n';}
-
+        /*============== Update Stats ================= */
         if (outcome == prediction){
             hit++;
         } else {
@@ -221,15 +286,15 @@ int main (int argc, char* argv[])
         }
     }
 
+    // print overall stats
     printf("number of predictions: %d\n", count);
     printf("number of mispredictions: %d\n", miss);
     printf("misprediction rate:      %f\n", (100.00 * miss/count));
 
     // printing the content
-
-    for (int i=0; i < SIZE; i++){
-        printf("%d %d\n", i, predtab[i].counter);
-    }
+    print_contents(choosertab, CTABSIZE, "CHOOSER");
+    print_contents(gsharetab, GSHARETABSIZE, "GSHARE");
+    print_contents(bimodaltab, BIMODALTABSIZE, "BIMODAL");
 
     return 0;
 }
