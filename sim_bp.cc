@@ -23,6 +23,12 @@ struct branch {
     int counter;
 };
 
+void print_simulation_stats(int total_predictions, int mispredictions){
+    printf("OUTPUT\n");
+    printf("number of predictions: %d\n", total_predictions);
+    printf("number of mispredictions: %d\n", mispredictions);
+    printf("misprediction rate:      %.2f\%\n", (100.00 * mispredictions/total_predictions));
+}
 
 void print_contents(branch table[], int SIZE, char* name){
     printf("FINAL %s CONTENTS\n", name);
@@ -129,6 +135,67 @@ unsigned long int update_bhr(unsigned long int bhr, char outcome, int n){
     return bhr;
 }
 
+
+void run_gshare_predictor_simulation(bp_params params, char *trace_file_name){
+    char outcome;           // Variable holds branch outcome
+    unsigned long int addr; // Variable holds the address read from input file
+    // Open trace_file in read mode
+    FILE *FILE_POINTER = fopen(trace_file_name, "r");
+    if(FILE_POINTER == NULL)
+    {
+        // Throw error and exit if fopen() failed
+        printf("Error: Unable to open file %s\n", trace_file_name);
+        exit(EXIT_FAILURE);
+    }
+
+
+    int hit=0;
+    int miss=0;
+    int count=0;;
+
+    char str[2];
+    int g_pred, g_idx;
+    char prediction;
+    int m = params.M1;
+    int n = params.N; 
+
+    unsigned long int bhr = 0; // shift register
+
+    int GSHARETABSIZE = pow(2, m);
+    branch gsharetab[GSHARETABSIZE];
+    for (int i=0; i <GSHARETABSIZE; i++){gsharetab[i].counter = 2;}
+
+
+    while(fscanf(FILE_POINTER, "%lx %s", &addr, str) != EOF) {
+        
+        outcome = str[0];
+        count++;
+
+        /*=============== Determine Index ============= */
+        g_idx = get_gshare_idx(bhr, addr, m, n) % GSHARETABSIZE;
+        /*=============== Make Prediction ============= */
+        g_pred = gsharetab[g_idx].counter;
+        /*============== Update Table ================= */
+        gsharetab[g_idx].counter = get_new_prediction_from_outcome(gsharetab[g_idx].counter, outcome);
+        /* Use this as the final prediction */
+        prediction = itoc_pred(g_pred);
+        /*========== Update Global History ============ */
+        bhr = update_bhr(bhr, outcome, n);
+        /*============== Update Stats ================= */
+        if (outcome == prediction){
+            hit++;
+        } else {
+            miss++;
+        }
+    }
+
+    print_simulation_stats(count, miss);
+
+    // printing the content
+    print_contents(gsharetab, GSHARETABSIZE, "GSHARE");
+
+}
+
 void run_bimodal_predictor_simulation(bp_params params, char *trace_file_name){
     char outcome;           // Variable holds branch outcome
     unsigned long int addr; // Variable holds the address read from input file
@@ -156,32 +223,15 @@ void run_bimodal_predictor_simulation(bp_params params, char *trace_file_name){
 
     while(fscanf(FILE_POINTER, "%lx %s", &addr, str) != EOF) {
         outcome = str[0];
-
-        /*
-        printf("=%d %lx  %c\n", count, addr, outcome);
-        */
         count++;
-
         /*=============== Determine Index ============= */
         b_idx = get_index(addr, m2) % BIMODALTABSIZE;
-
         /*=============== Make Prediction ============= */
         b_pred = bimodaltab[b_idx].counter; 
-
         /*============== Update Table ================= */
         bimodaltab[b_idx].counter = get_new_prediction_from_outcome(bimodaltab[b_idx].counter, outcome);
         /* Use this as the final prediction */
         prediction = itoc_pred(b_pred);
-
-        /*
-        printf("GP:  %d  %d\n", idx, pred);
-        */
-
-        /*
-        pred = predtab[idx].counter;
-        printf("GU:  %d  %d\n", idx, pred);
-        */
-
         /*============== Update Stats ================= */
         if (outcome == prediction){
             hit++;
@@ -191,11 +241,7 @@ void run_bimodal_predictor_simulation(bp_params params, char *trace_file_name){
     }
 
     // print overall stats
-    printf("OUTPUT\n");
-    printf("number of predictions: %d\n", count);
-    printf("number of mispredictions: %d\n", miss);
-    printf("misprediction rate:      %.2f\%\n", (100.00 * miss/count));
-
+    print_simulation_stats(count, miss);
 
     // printing the content
     print_contents(bimodaltab, BIMODALTABSIZE, "BIMODAL");
@@ -245,6 +291,9 @@ int main (int argc, char* argv[])
         params.N        = strtoul(argv[3], NULL, 10);
         trace_file      = argv[4];
         printf("COMMAND\n%s %s %lu %lu %s\n", argv[0], params.bp_name, params.M1, params.N, trace_file);
+
+        run_gshare_predictor_simulation(params, trace_file);
+        return 0;
 
     }
     else if(strcmp(params.bp_name, "hybrid") == 0)          // Hybrid
@@ -364,12 +413,8 @@ int main (int argc, char* argv[])
         }
     }
 
-    // print overall stats
-    printf("OUTPUT\n");
-    printf("number of predictions: %d\n", count);
-    printf("number of mispredictions: %d\n", miss);
-    printf("misprediction rate:      %.2f\%\n", (100.00 * miss/count));
-
+    // print stats
+    print_simulation_stats(count, miss);
 
     // printing the content
     print_contents(choosertab, CTABSIZE, "CHOOSER");
